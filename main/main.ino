@@ -13,7 +13,7 @@
 uint8_t OLED_GRAM[128][8];
 
 // WiFi credentials – replace with your network info
-const char *ssid = "QY_Home";
+const char *ssid = ".";
 const char *password = ".";
 
 // UDP broadcast settings
