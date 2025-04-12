@@ -12,6 +12,8 @@
 
 // Initialize TFT_eSPI library object
 TFT_eSPI tft = TFT_eSPI();
+// Initialize the Sprite object, referencing the TFT object
+TFT_eSprite img = TFT_eSprite(&tft);
 
 // Initialize DHT sensor object
 DHT dht(DHTPIN, DHTTYPE);
@@ -24,76 +26,95 @@ void setup(void) {
   digitalWrite(TFT_LED, HIGH);  // Turn the backlight ON (set HIGH)
   // --- End Backlight Control ---
 
-  Serial.println(F("ESP32 TFT_eSPI & DHT22 Test"));
+  Serial.println(F("ESP32 TFT_eSPI Sprite & DHT22 Test"));
 
   // Initialize TFT_eSPI display driver
   tft.init();
   Serial.println(F("TFT Initialized"));
 
   // Set Display Rotation (0=0, 1=90, 2=180, 3=270 degrees)
-  tft.setRotation(3); // Rotate display 180 degrees <-- CHANGED
-  Serial.println(F("Rotation set to 180 degrees"));
+  // Rotation 3 makes the 128x160 display behave as 160x128
+  tft.setRotation(3); // Set rotation on the physical display
+  Serial.println(F("Rotation set to 270 degrees"));
+
+  // Create the sprite with dimensions matching the ROTATED screen
+  img.createSprite(160, 128); // Width=160, Height=128 for rotation 1 or 3
 
   // Initialize DHT sensor
   dht.begin();
   Serial.println(F("DHT22 Initialized"));
 
-  // Prepare initial display screen
-  tft.fillScreen(TFT_BLACK); // Clear screen
-  tft.setCursor(5, 5); // Note: Coordinates are relative to the NEW rotation (top-left is now bottom-right)
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(1);
-  tft.println("DHT22 Sensor:");
+  // --- Draw initial static content to SPRITE ---
+  img.fillSprite(TFT_BLACK); // Clear sprite background (use fillSprite for full clear)
+  img.setCursor(5, 5);       // Coordinates are relative to the sprite
+  img.setTextColor(TFT_WHITE, TFT_BLACK); // Set text color (FG, BG) for sprite
+  img.setTextSize(1);
+  img.println("DHT22 Sensor:");
+  // --- End drawing to sprite ---
+
+  // Push the initial sprite content to the screen
+  img.pushSprite(0, 0); // Push sprite to TFT at coordinate 0,0
+  Serial.println("Initial sprite pushed.");
+
   delay(500); // Small delay before first reading
 }
 
 void loop() {
-  // Wait a few seconds between measurements. DHT22 needs >= 2 seconds.
+  // Wait a few seconds between measurements. DHT22 needs >= 2000ms.
   delay(2000);
 
   // Read temperature and humidity
   float humidity = dht.readHumidity();
   float temperature_c = dht.readTemperature();
 
-  // Check if any reads failed and exit early (to try again).
+  // --- Start Drawing to Sprite ---
+  // Clear the entire sprite buffer first (simpler than calculating specific areas)
+  img.fillSprite(TFT_BLACK);
+
+  // Re-draw static title text each time since we cleared the sprite
+  img.setCursor(5, 5);
+  img.setTextColor(TFT_WHITE, TFT_BLACK);
+  img.setTextSize(1);
+  img.println("DHT22 Sensor:");
+
+  // Check if any reads failed and display error on SPRITE
   if (isnan(humidity) || isnan(temperature_c)) {
     Serial.println(F("Failed to read from DHT sensor!"));
-    // Display error on TFT (Adjust coordinates if needed for rotation)
-    tft.fillRect(5, 20, tft.width() - 10, 40, TFT_BLACK); // Clear area
-    tft.setCursor(5, 20);
-    tft.setTextColor(TFT_RED);
-    tft.setTextSize(2);
-    tft.println("Read Fail!");
+    img.setCursor(5, 20); // Position error message on sprite
+    img.setTextColor(TFT_RED, TFT_BLACK); // <-- Use img object, set FG/BG color
+    img.setTextSize(2);
+    img.println("Read Fail!"); // <-- Use img object
+
+    // Push the sprite content (including the error) to the screen
+    img.pushSprite(0, 0); // <-- ADDED Push sprite here for error case
+
     return; // Exit loop early if read failed
   }
 
-  // --- Display Data on TFT ---
+  // --- Display Sensor Data on SPRITE ---
 
-  // Clear the area where sensor data will be displayed
-  // Note: For 180 degree rotation, width/height remain the same as 0 degrees
-  // but the origin (0,0) is now effectively at the bottom-right corner
-  // of the original orientation.
-  tft.fillRect(5, 20, tft.width() - 10, 60, TFT_BLACK);
+  // Display Temperature (Coordinates relative to sprite)
+  img.setCursor(5, 25); // <-- Use img object
+  img.setTextColor(TFT_YELLOW, TFT_BLACK); // <-- Use img object
+  img.setTextSize(2);
+  img.print(F("T:")); // <-- Use img object
+  img.print(temperature_c, 1); // <-- Use img object
+  img.println(" C"); // <-- Use img object
 
-  // Display Temperature (Coordinates might need adjusting for desired 180deg layout)
-  tft.setCursor(5, 25);
-  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-  tft.setTextSize(2);
-  tft.print(F("T:"));
-  tft.print(temperature_c, 1);
-  tft.println(" C");
-
-  // Display Humidity (Coordinates might need adjusting for desired 180deg layout)
-  tft.setCursor(5, 50);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.setTextSize(2);
-  tft.print(F("H:"));
-  tft.print(humidity, 1);
-  tft.println(" %");
+  // Display Humidity (Coordinates relative to sprite)
+  img.setCursor(5, 50); // <-- Use img object
+  img.setTextColor(TFT_CYAN, TFT_BLACK); // <-- Use img object
+  img.setTextSize(2);
+  img.print(F("H:")); // <-- Use img object
+  img.print(humidity, 1); // <-- Use img object
+  img.println(" %"); // <-- Use img object
 
   // --- End Display Data ---
 
-  // Print data to Serial Monitor as well
+  // Push the completed sprite buffer to the physical screen at coordinates (0,0)
+  img.pushSprite(0, 0); // <-- ADDED Push sprite here for success case
+
+  // Print data to Serial Monitor as well (remains unchanged)
   Serial.print(F("Humidity: "));
   Serial.print(humidity);
   Serial.print(F("%  Temperature: "));
