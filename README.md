@@ -1,4 +1,5 @@
 # Esp32AirQualitySensor
+Soldering free!
 
 ## Temperature and Humidity Sensor with TFT Display
 
