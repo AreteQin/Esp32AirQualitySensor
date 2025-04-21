@@ -31,4 +31,5 @@ Soldering free!
 - TFT_eSPI library
 
 ### TFT_eSPI Configuration
-- Replace the file `C:\Users\YourName\Documents\Arduino\libraries\TFT_eSPIUser_Setup.h` with the file `./tft_2in1/User_Setup.h`.
+- Replace the file `C:\Users\YourName\Documents\Arduino\libraries\TFT_eSPIUser_Setup.h`
+-  with the file `./tft_2in1/User_Setup.h`.
