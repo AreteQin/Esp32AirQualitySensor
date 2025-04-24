@@ -30,7 +30,7 @@ const uint8_t MARGIN_X    = 1;
 const uint8_t VALUE_X     = 64;
 
 // ───────── timer ───────────
-const unsigned long DISPLAY_ON_MS = 60000UL;   // 1 minute
+const unsigned long DISPLAY_ON_MS = 10*60000UL;   // 10 minute
 unsigned long bootMillis;
 
 // ───────── display state ───
