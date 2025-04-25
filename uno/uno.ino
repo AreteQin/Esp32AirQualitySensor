@@ -1,6 +1,6 @@
 /*
  * Air-quality monitor
- * – incremental redraw, then total shut-down after 1 minute
+ * – incremental redraw, then total shut-down of display **and sensor** after 10 minutes
  * Board : Arduino Uno
  * Display: ST7735 (Adafruit_ST7735 / ST7789 library)
  */
@@ -14,11 +14,12 @@
 // ───────── pin map ─────────
 #define TFT_CS     10
 #define TFT_DC      9
-#define TFT_RST     8           // we will pull this low at shut-down
+#define TFT_RST     8           // we pull this low at shut-down
 #define TFT_LED     7           // HIGH = on  •  LOW = off
 
 #define SENSOR_RX   2
 #define SENSOR_TX   3
+#define SENSOR_PWR  6           // NEW: drives a MOSFET / transistor that switches sensor Vcc
 
 SoftwareSerial  sensorSerial(SENSOR_RX, SENSOR_TX);
 Adafruit_ST7735 tft(TFT_CS, TFT_DC, TFT_RST);
@@ -30,12 +31,12 @@ const uint8_t MARGIN_X    = 1;
 const uint8_t VALUE_X     = 64;
 
 // ───────── timer ───────────
-const unsigned long DISPLAY_ON_MS = 10*60000UL;   // 10 minute
+const unsigned long DISPLAY_ON_MS = 10UL * 60UL * 1000UL;   // 10 minutes
 unsigned long bootMillis;
 
 // ───────── display state ───
-bool displayActive = true;                     // becomes false after shut-down
-bool firstPaint    = true;
+bool systemActive = true;                      // becomes false after shut-down
+bool firstPaint   = true;
 
 // cached values
 uint16_t prevCO2  = 0xFFFF, prevPM25 = 0xFFFF, prevPM10 = 0xFFFF;
@@ -76,35 +77,36 @@ void drawFieldFloat(int16_t y, const __FlashStringHelper *label,
 }
 
 // ───────── hard-power-off ───
-void shutdownDisplay()
+void shutdownSystem()
 {
-  if (!displayActive) return;          // already done
+  if (!systemActive) return;                 // already done
 
-  // 1. blank GRAM so a faint image can't persist
-  tft.fillScreen(ST77XX_BLACK);
-
-  // 2. panel off sequence: DISPOFF (0x28) → SLPIN (0x10)
+  /* ---- turn display off exactly as before ---- */
+  tft.fillScreen(ST77XX_BLACK);              // blank GRAM
   tft.writeCommand(ST77XX_DISPOFF);
   delay(10);
   tft.writeCommand(ST77XX_SLPIN);
-  delay(120);                          // spec: >120 ms for internal circuits to power-down
+  delay(120);
+  digitalWrite(TFT_LED, LOW);                // back-light off
+  digitalWrite(TFT_RST, LOW);                // hold in reset
 
-  // 3. back-light off
-  digitalWrite(TFT_LED, LOW);
+  /* ---- turn sensor off ---- */
+  sensorSerial.end();                        // stop SoftwareSerial ISR
+  digitalWrite(SENSOR_PWR, LOW);             // cut power via MOSFET / transistor
 
-  // 4. hold display in hardware reset (optional but ensures µA sleep)
-  digitalWrite(TFT_RST, LOW);
-
-  displayActive = false;
+  systemActive = false;
 }
 
 // ───────── Arduino setup ──
 void setup()
 {
-  pinMode(TFT_LED, OUTPUT);
-  pinMode(TFT_RST, OUTPUT);
-  digitalWrite(TFT_RST, HIGH);         // release reset
-  digitalWrite(TFT_LED, HIGH);         // back-light on
+  pinMode(TFT_LED,  OUTPUT);
+  pinMode(TFT_RST,  OUTPUT);
+  pinMode(SENSOR_PWR, OUTPUT);
+
+  digitalWrite(TFT_RST,  HIGH);              // release reset
+  digitalWrite(TFT_LED,  HIGH);              // back-light on
+  digitalWrite(SENSOR_PWR, HIGH);            // **sensor ON**
 
   tft.initR(INITR_BLACKTAB);
   tft.setRotation(0);
@@ -118,12 +120,12 @@ void setup()
 // ───────── main loop ──────
 void loop()
 {
-  // ░░ 1. shut down after one minute ░░
-  if (displayActive && (millis() - bootMillis >= DISPLAY_ON_MS))
-    shutdownDisplay();
+  // ░░ 1. shut down after 10 minutes ░░
+  if (systemActive && (millis() - bootMillis >= DISPLAY_ON_MS))
+    shutdownSystem();
 
   // once powered down, drop into low-duty idle
-  if (!displayActive) {
+  if (!systemActive) {
     delay(100);
     return;
   }
