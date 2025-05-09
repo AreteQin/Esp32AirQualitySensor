@@ -1,0 +1,69 @@
+#include <SPI.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7735.h>
+#include <DHT.h>
+
+/* ───────── pin map ───────── */
+#define DHTPIN   2          // DHT-22 data → digital pin D2
+#define DHTTYPE  DHT22
+
+#define TFT_CS   10
+#define TFT_DC    9
+#define TFT_RST   8          // pulled low for hard reset
+#define TFT_LED   7          // HIGH = back-light on
+
+Adafruit_ST7735 tft(TFT_CS, TFT_DC, TFT_RST);
+DHT dht(DHTPIN, DHTTYPE);
+
+/* ───────── Arduino setup ── */
+void setup()
+{
+  pinMode(TFT_LED, OUTPUT);
+  pinMode(TFT_RST, OUTPUT);
+
+  digitalWrite(TFT_RST, HIGH);   // release reset line
+  digitalWrite(TFT_LED, HIGH);   // turn back-light on
+
+  tft.initR(INITR_BLACKTAB);
+  tft.setRotation(0);            // portrait
+  tft.fillScreen(ST77XX_BLACK);
+
+  tft.setTextWrap(false);
+  tft.setTextColor(ST77XX_WHITE);
+  tft.setTextSize(2);
+
+  dht.begin();
+}
+
+/* ───────── main loop ────── */
+void loop()
+{
+  static uint32_t lastRead = 0;
+  /* Read the sensor every ~2 s (DHT-22 max rate ≈0.5 Hz) */
+  if (millis() - lastRead >= 2000)
+  {
+    lastRead = millis();
+
+    float humidity = dht.readHumidity();
+    float temperature = dht.readTemperature();   // default °C
+
+    if (isnan(humidity) || isnan(temperature))
+    {
+      // Sensor read failed – keep the previous values on-screen
+      return;
+    }
+
+    /* Clear screen and redraw values */
+    tft.fillScreen(ST77XX_BLACK);
+
+    tft.setCursor(4, 20);
+    tft.print(F("Temp: "));
+    tft.print(temperature, 1);      // one decimal place
+    tft.print(F(" C"));
+
+    tft.setCursor(4, 60);
+    tft.print(F("Hum : "));
+    tft.print(humidity, 1);
+    tft.print(F(" %"));
+  }
+}
