@@ -1,73 +1,133 @@
-#include <driver/i2s.h>
-#include <math.h>
+/*
+  ESP32 I2S AI-Generated Song Player
+  FIXED: Actively outputs silence during rests to eliminate noise.
+*/
+#include "Arduino.h"
+#include "driver/i2s.h"
+#include "math.h"
 
-// sound
-const unsigned int sound_data_len = 7168;
-const int16_t sound_data[] = {
-  -24, -33, -3, 11, 2, -18, -13, 22, 23, -16, -26, -5, 23, 14, -18, -21,
-  6, 30, 8, -19, -21, 5, 28, 12, -19, -26, 0, 31, 16, -21, -29, -5,
-  30, 20, -21, -33, -7, 34, 25, -20, -36, -11, 35, 28, -22, -37, -13,
-  // ... (data continues for over 7000 samples)
-  // NOTE: This is a heavily truncated sample. The full data is much larger.
-  // The provided code in the next step will contain the full array.
-  // For now, imagine the rest of the data is here.
-  0, 0, 0, 0, 0, 0, 0, 0
+// I2S Connections
+#define I2S_DOUT      22
+#define I2S_BCLK      26
+#define I2S_LRC       25
+
+// I2S Settings
+#define I2S_PORT      I2S_NUM_0
+#define SAMPLE_RATE   44100
+#define BITS_PER_SAMPLE I2S_BITS_PER_SAMPLE_16BIT
+
+// --- Define the Song Structure ---
+struct Note {
+  int frequency;
+  int duration;
 };
 
-// I²S pin definitions (match your wiring)
-#define I2S_DOUT   25    // DATA output (DIN on MAX98357A)
-#define I2S_BCLK   27    // Bit clock (BCLK)
-#define I2S_LRC    26    // Word select (LRCLK/WS)
-#define SD_PIN     5     // Shutdown Pin
+// --- Note and Rhythm Definitions ---
+#define NOTE_REST 0
+#define NOTE_C4  262
+#define NOTE_D4  294
+#define NOTE_E4  330
+#define NOTE_F4  349
+#define NOTE_G4  392
+#define NOTE_A4  440
+#define NOTE_B4  494
+#define NOTE_C5  523
 
-#define I2S_PORT   I2S_NUM_0
+#define TEMPO 120
+const int QUARTER_NOTE = 60000 / TEMPO;
+const int HALF_NOTE = QUARTER_NOTE * 2;
+const int EIGHTH_NOTE = QUARTER_NOTE / 2;
+const int SIXTEENTH_NOTE = QUARTER_NOTE / 4;
 
-// The sample rate must match the sound file!
-const int sampleRate = 16000;
+// --- The AI-Generated Song ---
+Note aiSong[] = {
+  {NOTE_E4, EIGHTH_NOTE},
+  {NOTE_B4, SIXTEENTH_NOTE},
+  {NOTE_C5, QUARTER_NOTE},
+  {NOTE_A4, EIGHTH_NOTE},
+  {NOTE_REST, SIXTEENTH_NOTE}, // This rest will now be silent
+  {NOTE_A4, SIXTEENTH_NOTE},
+  {NOTE_G4, EIGHTH_NOTE},
+  {NOTE_E4, EIGHTH_NOTE},
+  {NOTE_G4, EIGHTH_NOTE},
+  {NOTE_C5, HALF_NOTE},
+  {NOTE_REST, QUARTER_NOTE} // This rest will also be silent
+};
+
+
+// Function to generate and play a single note or rest
+void playNote(int frequency, int duration_ms) {
+    // --- FIX: Handle rests by sending silence ---
+    if (frequency == 0) {
+        // Clear the I2S buffer to ensure silence is played
+        i2s_zero_dma_buffer(I2S_PORT);
+        delay(duration_ms);
+        return;
+    }
+  
+    int sample_rate = SAMPLE_RATE;
+    int num_samples = duration_ms * (sample_rate / 1000);
+    int16_t *samples = (int16_t *)malloc(num_samples * sizeof(int16_t) * 2);
+
+    if (!samples) {
+        Serial.println("Error: Failed to allocate memory for samples");
+        return;
+    }
+
+    double sin_value;
+    int16_t sample_value;
+    for (int i = 0; i < num_samples; i++) {
+        sin_value = sin(2 * PI * frequency * i / sample_rate);
+        sample_value = (int16_t)(sin_value * INT16_MAX * 0.1);
+        samples[i * 2] = sample_value;
+        samples[i * 2 + 1] = sample_value;
+    }
+
+    size_t bytes_written = 0;
+    i2s_write(I2S_PORT, samples, num_samples * sizeof(int16_t) * 2, &bytes_written, portMAX_DELAY);
+    free(samples);
+}
+
 
 void setup() {
-  Serial.begin(115200);
-  Serial.println("ESP32 - I2S Sound Effect Player for MAX98357A");
+    Serial.begin(115200);
+    Serial.println("ESP32 I2S Song Player - Noise Fixed");
 
-  // If you are using the SHUTDOWN pin, configure it.
-  #ifdef SD_PIN
-    pinMode(SD_PIN, OUTPUT);
-    digitalWrite(SD_PIN, HIGH); // Set HIGH to enable the amplifier
-  #endif
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+        .sample_rate = SAMPLE_RATE,
+        .bits_per_sample = BITS_PER_SAMPLE,
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 8,
+        .dma_buf_len = 64,
+        .use_apll = false
+    };
 
-  // Configure and install the I²S driver
-  i2s_config_t i2s_config = {
-    .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_TX),
-    .sample_rate = sampleRate,
-    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-    // CRITICAL CHANGE FOR MAX98357A!
-    // Use Left-Justified (MSB) format instead of standard I2S
-    .communication_format = I2S_COMM_FORMAT_STAND_MSB,
-    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count = 8,
-    .dma_buf_len = 64,
-    .use_apll = true
-  };
-  i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+    i2s_pin_config_t pin_config = {
+        .bck_io_num = I2S_BCLK,
+        .ws_io_num = I2S_LRC,
+        .data_out_num = I2S_DOUT,
+        .data_in_num = I2S_PIN_NO_CHANGE
+    };
 
-  // Define the physical GPIO pins to be used
-  i2s_pin_config_t pin_config = {
-    .bck_io_num = I2S_BCLK,
-    .ws_io_num = I2S_LRC,
-    .data_out_num = I2S_DOUT,
-    .data_in_num = I2S_PIN_NO_CHANGE
-  };
-  i2s_set_pin(I2S_PORT, &pin_config);
+    i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+    i2s_set_pin(I2S_PORT, &pin_config);
 }
 
 void loop() {
-  Serial.println("Playing sound...");
+    Serial.println("Playing song...");
+    int numNotes = sizeof(aiSong) / sizeof(Note);
 
-  // Write the sound data from the header file to the I2S port
-  size_t bytes_written = 0;
-  i2s_write(I2S_PORT, sound_data, sizeof(sound_data), &bytes_written, portMAX_DELAY);
-
-  Serial.println("Sound finished. Waiting 5 seconds...");
-  delay(5000); // Wait 5 seconds before playing again
+    for (int i = 0; i < numNotes; i++) {
+        Serial.printf("Playing note %d: Freq=%d, Dur=%d\n", i + 1, aiSong[i].frequency, aiSong[i].duration);
+        playNote(aiSong[i].frequency, aiSong[i].duration);
+    }
+    
+    Serial.println("Song finished. Repeating in 2 seconds...");
+    
+    // --- FIX: Clear the I2S buffer before the long pause ---
+    i2s_zero_dma_buffer(I2S_PORT);
+    delay(2000); 
 }
