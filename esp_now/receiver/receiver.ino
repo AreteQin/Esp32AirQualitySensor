@@ -11,10 +11,11 @@
 // =================================================================================
 
 // == I2S/Amplifier Configuration ==
+// Pins updated to match the tested speaker configuration
 #define I2S_PORT_NUMBER I2S_NUM_0
-#define I2S_SPEAKER_BCLK_PIN  27
-#define I2S_SPEAKER_LRC_PIN   26
-#define I2S_SPEAKER_DIN_PIN   25
+#define I2S_SPEAKER_BCLK_PIN  26 // BCLK (Bit Clock)
+#define I2S_SPEAKER_LRC_PIN   25 // LRC (Left/Right Clock)
+#define I2S_SPEAKER_DIN_PIN   22 // DIN (Data In)
 
 // == Audio Configuration ==
 const int SAMPLE_RATE = 16000;
@@ -40,7 +41,7 @@ void setup_i2s_speaker() {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
     .sample_rate = SAMPLE_RATE,
     .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT, // Match transmitter's mono format
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
     .dma_buf_count = 8,
